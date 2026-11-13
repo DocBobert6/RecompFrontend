@@ -547,6 +547,17 @@ public:
                 copy_buffer_ = device_->createBuffer(plume::RenderBufferDesc::UploadBuffer(copy_buffer_size_));
             }
 
+            // An allocation failure here used to segfault on the map() below.
+            // RmlUi reacts to a false return by using texture handle 0, which is
+            // the reserved 1x1 white texture — so a silent failure paints the
+            // launcher's full-screen SVG solid white instead of crashing.
+            if (copy_buffer_ == nullptr) {
+                fprintf(stderr, "recompui: upload buffer allocation failed (%u bytes) for a %dx%d texture\n",
+                    copy_buffer_size_, source_dimensions.x, source_dimensions.y);
+                copy_buffer_size_ = 0;
+                return false;
+            }
+
             // Copy the source data into the upload buffer.
             uint8_t* dst_data = (uint8_t *)(copy_buffer_->map());
             if (row_byte_padding == 0) {
@@ -594,6 +605,12 @@ public:
             // Create a descriptor set with this texture in it.
             std::unique_ptr<plume::RenderDescriptorSet> set = texture_set_builder_->create(device_);
 
+            if (set == nullptr) {
+                fprintf(stderr, "recompui: descriptor set allocation failed for a %dx%d texture (pool exhausted?)\n",
+                    source_dimensions.x, source_dimensions.y);
+                return false;
+            }
+
             set->setTexture(gTexture_descriptor_index, texture.get(), plume::RenderTextureLayout::SHADER_READ);
 
             textures_.emplace(texture_handle, TextureHandle{ std::move(texture), std::move(set), false });
@@ -601,6 +618,8 @@ public:
             return true;
         }
 
+        fprintf(stderr, "recompui: createTexture failed for %dx%d — RmlUi will fall back to the reserved white texture\n",
+            source_dimensions.x, source_dimensions.y);
         return false;
     }
 

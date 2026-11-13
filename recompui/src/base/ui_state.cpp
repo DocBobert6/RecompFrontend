@@ -657,6 +657,15 @@ void draw_hook(plume::RenderCommandList* command_list, plume::RenderFramebuffer*
         return;
     }
 
+#ifdef __ANDROID__
+    // Deliver any parked SAF file dialog results here on the RT64 present
+    // thread (which owns the launcher/RmlUi state the callbacks mutate)
+    // instead of the thread the JNI result arrived on. Called before
+    // ui_state_mutex is taken, matching the lock-free context the callbacks
+    // previously ran in.
+    recompui::file::android_drain_pending_dialog_results();
+#endif
+
     // Return to the launcher if no menu is open and the game isn't started.
     if (!recompui::is_any_context_shown() && !ultramodern::is_game_started()) {
         recompui::show_context(recompui::get_launcher_context_id(), "");
@@ -798,9 +807,14 @@ void draw_hook(plume::RenderCommandList* command_list, plume::RenderFramebuffer*
                 }
                 else if (*await_stick_return && fabsf(axis_value) < 0.15f) {
                     *await_stick_return = false;
-                    // Stop pressing the current key if the axis that was released was the one triggering key presses.
-                    int sdl_key = cont_axis_to_key(cur_event.caxis, axis_value);
-                    if (sdl_key == latest_controller_key_pressed) {
+                    // Stop pressing the current key if the axis that was released
+                    // was the one triggering key presses. The release value's sign
+                    // is meaningless (a touch stick snaps straight to exactly 0,
+                    // which maps to DOWN/RIGHT), so match against BOTH directions
+                    // of this axis — otherwise an UP/LEFT repeat never clears.
+                    int key_pos = cont_axis_to_key(cur_event.caxis, 1.0f);
+                    int key_neg = cont_axis_to_key(cur_event.caxis, -1.0f);
+                    if (latest_controller_key_pressed == key_pos || latest_controller_key_pressed == key_neg) {
                         latest_controller_key_pressed = SDLK_UNKNOWN;
                     }
                 }

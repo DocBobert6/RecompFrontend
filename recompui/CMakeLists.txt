@@ -104,7 +104,7 @@ target_include_directories(recompui PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include
 
 if (WIN32)
     target_include_directories(recompui PRIVATE ${sdl2_SOURCE_DIR}/include)
-elseif (APPLE OR CMAKE_SYSTEM_NAME MATCHES "Linux")
+elseif (APPLE OR CMAKE_SYSTEM_NAME MATCHES "Linux|Android")
     target_include_directories(recompui PRIVATE ${SDL2_INCLUDE_DIRS})
 endif()
 

@@ -14,6 +14,10 @@ namespace recompui {
         std::filesystem::path get_asset_path(const char* asset);
         void open_file_dialog(std::function<void(bool success, const std::filesystem::path& path)> callback);
         void open_file_dialog_multiple(std::function<void(bool success, const std::list<std::filesystem::path>& paths)> callback);
+        // [wcw diag] Test-only: opens the Android Diagnostics view (version,
+        // ROM state, GPU/Vulkan info, log tail, log export). False on
+        // non-Android builds, where there is no such view.
+        bool show_diagnostics_activity();
         void show_error_message_box(const char *title, const char *message);
 
         // Android: file dialogs are asynchronous (Storage Access Framework).

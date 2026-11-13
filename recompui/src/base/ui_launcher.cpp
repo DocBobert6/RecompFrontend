@@ -295,6 +295,13 @@ namespace recompui {
         }
 
         void on_start_game_mode() {
+            // [wcw diag] Start guard (same as the Start Game option): never
+            // launch the native side with a missing/invalid stored ROM. The
+            // mode menu stays open so the user can pick the ROM instead.
+            if (!recomp::is_stored_rom_valid(this->game_id)) {
+                recompui::message_box("No validated ROM is stored. Please pick your WWF No Mercy (USA, Rev 1) ROM first.");
+                return;
+            }
             get_launcher_menu()->hide_game_mode_menu();
             recomp::start_game(this->game_id, this->cur_game_mode_id);
             recompui::hide_all_contexts();
@@ -412,29 +419,51 @@ namespace recompui {
             if (success) {
                 recomp::RomValidationError rom_error = recomp::select_rom(path, this->game_id);
                 switch (rom_error) {
-                    case recomp::RomValidationError::Good:
+                    case recomp::RomValidationError::Good: {
+                        // [wcw diag] The old code's ONLY success feedback was
+                        // the button title flipping to "Start Game" — nothing
+                        // else on screen changed, so a successful import
+                        // looked identical to a dropped result. Write the
+                        // validated ROM's identity into the status row.
+                        std::string status = recomp::stored_rom_status(this->game_id);
+                        update_rom_status(status.empty()
+                            ? "ROM: imported — validated"
+                            : "ROM: " + status);
                         callback(true);
                         return;
+                    }
                     case recomp::RomValidationError::FailedToOpen:
                         recompui::message_box("Failed to open ROM file.");
+                        update_rom_status("ROM import failed: could not open the picked file.");
                         break;
                     case recomp::RomValidationError::NotARom:
                         recompui::message_box("This is not a valid ROM file.");
+                        update_rom_status("ROM import failed: not a valid ROM file.");
                         break;
                     case recomp::RomValidationError::IncorrectRom:
                         recompui::message_box("This ROM is not the correct game.");
+                        update_rom_status("ROM import failed: not the correct game.");
                         break;
                     case recomp::RomValidationError::NotYet:
                         recompui::message_box("This game isn't supported yet.");
+                        update_rom_status("ROM import failed: this game isn't supported yet.");
                         break;
                     case recomp::RomValidationError::IncorrectVersion:
                         recompui::message_box(
                                 "This ROM is the correct game, but the wrong version.\nThis project requires the NTSC-U N64 version of the game.");
+                        update_rom_status("ROM import failed: correct game, wrong version (need USA Rev 1).");
                         break;
                     case recomp::RomValidationError::OtherError:
                         recompui::message_box("An unknown error has occurred.");
+                        update_rom_status("ROM import failed: unknown error (see Diagnostics log).");
                         break;
                 }
+            } else {
+                // Picker cancelled, or the picker never opened / its result
+                // never arrived. Not an error, but it must say so: the old
+                // code left the launcher exactly as it was, indistinguishable
+                // from a hung import.
+                update_rom_status("ROM import: no file picked — try again.");
             }
             callback(false);
         });
@@ -447,6 +476,44 @@ namespace recompui {
         return option;
     }
 
+    GameOption *GameOptionsMenu::add_rom_status_option() {
+        // [wcw diag] Initial state from the stored copy (a previous
+        // session's import survives restart); the select_rom callback
+        // rewrites this text after every import attempt in this session.
+        std::string initial = this->rom_valid
+            ? recomp::stored_rom_status(this->game_id)
+            : std::string{};
+        if (initial.empty()) {
+            initial = this->rom_valid
+                ? "ROM: imported (validated at startup)"
+                : "ROM: none imported yet — pick your WWF No Mercy (USA, Rev 1) ROM";
+        } else {
+            initial = "ROM: " + initial;
+        }
+        GameOption *option = add_option(initial, [](){});
+        // Disabled: activating it does nothing (GameOption calls its
+        // callback unguarded on click, so the empty lambda is the belt and
+        // braces here; disabled is what keeps it out of navigation/focus).
+        option->set_enabled(false);
+        rom_status_option = option;
+        return option;
+    }
+
+    void GameOptionsMenu::update_rom_status(const std::string& status) {
+        if (rom_status_option != nullptr) {
+            rom_status_option->set_title(status);
+        }
+    }
+
+    GameOption *GameOptionsMenu::add_diagnostics_option() {
+        // [wcw diag] Test-only entry point for the Android Diagnostics view.
+        return add_option("Diagnostics (test build)", []() {
+            if (!recompui::file::show_diagnostics_activity()) {
+                recompui::message_box("The Diagnostics view is only available on Android builds.");
+            }
+        });
+    }
+
     GameOption *GameOptionsMenu::add_start_game_or_load_rom_option(const std::string& load_rom_title, const std::string& start_game_title) {
         GameOption *option = add_option(rom_valid ? start_game_title : load_rom_title, nullptr);
         option->set_as_primary_focus(true);
@@ -454,8 +521,20 @@ namespace recompui {
         auto context = get_current_context();
         context.set_autofocus_element(option);
 
-        option->set_callback([this, option, start_game_title]() {
+        option->set_callback([this, option, load_rom_title, start_game_title]() {
             if (this->rom_valid) {
+                // [wcw diag] Start guard: rom_valid only says an import
+                // succeeded (or a stored ROM validated at startup). Re-check
+                // the stored copy on disk right now — if it vanished or fails
+                // its hash, refuse to start and send the user back to the
+                // picker instead of launching the game with no ROM.
+                if (!recomp::is_stored_rom_valid(this->game_id)) {
+                    this->rom_valid = false;
+                    option->set_title(load_rom_title);
+                    update_rom_status("ROM import failed: the stored ROM could not be verified — pick it again.");
+                    recompui::message_box("No validated ROM is stored. Please pick your WWF No Mercy (USA, Rev 1) ROM first.");
+                    return;
+                }
                 recompui::update_game_mod_id(this->mod_game_id);
                 if (recomp::mods::game_mode_count(this->mod_game_id, false) > 0) {
                     get_launcher_menu()->show_game_mode_menu(this->game_id, this->game_display_name, this->game_thumbnail);

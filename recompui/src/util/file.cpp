@@ -252,6 +252,17 @@ namespace recompui {
             multiple_callback(multiple_success, multiple_paths);
         }
     }
+
+    bool file::show_diagnostics_activity() {
+#ifdef __ANDROID__
+        // [wcw diag] Test-only: asks the activity to open the Diagnostics
+        // view. Same JNI pattern as android_launch_file_dialog — the
+        // activity's static showDiagnostics() starts DiagnosticsActivity.
+        return android_launch_file_dialog("showDiagnostics");
+#else
+        return false;
+#endif
+    }
 #endif
 
     void file::open_file_dialog(std::function<void(bool success, const std::filesystem::path& path)> callback) {

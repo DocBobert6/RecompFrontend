@@ -17,6 +17,7 @@ namespace recompui {
     protected:
         std::vector<GameOption *> options;
         GameOption *start_game_option = nullptr;
+        GameOption *rom_status_option = nullptr;
         std::u8string game_id;
         std::string mod_game_id;
         std::string game_display_name;
@@ -29,6 +30,16 @@ namespace recompui {
         GameOptionsMenu(ResourceId rid, Element* parent, std::u8string game_id, std::string mod_game_id, std::string game_display_name, std::span<const char> game_thumbnail, GameOptionsMenuLayout layout = GameOptionsMenuLayout::Center);
 
         GameOption *add_option(const std::string& title, std::function<void()> callback);
+
+        // [wcw diag] Non-actionable row showing the current ROM import state
+        // (no ROM yet / imported + validated / import failed + reason). It is
+        // disabled, so activating it does nothing; update_rom_status rewrites
+        // its text after every import attempt.
+        GameOption *add_rom_status_option();
+        void update_rom_status(const std::string& status);
+        // [wcw diag] Test-only entry point for the Android Diagnostics view
+        // (version, ROM state, GPU/Vulkan info, log tail, log export).
+        GameOption *add_diagnostics_option();
 
         GameOption *add_start_game_or_load_rom_option(const std::string& load_rom_title = "Load ROM", const std::string& start_game_title = "Start Game");
         GameOption *add_setup_controls_option(const std::string& title = "Controls");

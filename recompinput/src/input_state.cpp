@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cstdio>
 #include <mutex>
 #include <span>
 #include <atomic>
@@ -67,6 +68,44 @@ void recompinput::poll_inputs() {
 
         InputState.mouse_delta = InputState.pending_mouse_delta;
         InputState.pending_mouse_delta = { 0.0f, 0.0f };
+    }
+
+    // [wcw][poll] (alpha.12) Prove the release reaches the GAME. The Java
+    // [wcw][touch] log records the setButton/setAxis calls, and the alpha.11
+    // device log proved every press there is paired with a release — yet the
+    // menu still flips by itself. The loss, if it is a loss, is after the
+    // JNI: SDL virtual-joystick state, the polled controller, or the game's
+    // own menu logic. This logs the player-1 controller exactly as
+    // controller_button_state / controller_axis_state read it — the raw SDL
+    // trigger axes and shoulder/d-pad buttons for the assigned P1 pad, plus
+    // how many controllers are detected and which joystick instance P1 is —
+    // once a second, so the next device log shows whether an R/L release the
+    // Java side sent is visible here. If LT/RT read 0 after a release yet
+    // the menu still flips, the flip is not a stuck input at all.
+    {
+        static int pollCount = 0;
+        if ((++pollCount % 60) == 0) {
+            std::lock_guard lock{ InputState.controllers_mutex };
+            const size_t detected = InputState.detected_controllers.size();
+            SDL_GameController *p1 = nullptr;
+            if (!recompinput::players::is_single_player_mode()) {
+                p1 = recompinput::players::get_player(0).controller;
+            } else if (!InputState.detected_controllers.empty()) {
+                p1 = InputState.detected_controllers[0];
+            }
+            if (p1 != nullptr) {
+                const SDL_JoystickID jid = SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(p1));
+                fprintf(stderr, "[wcw][poll] detected=%zu p1=%p jid=%d LT=%d RT=%d LB=%d RB=%d DPAD_DOWN=%d\n",
+                    detected, (void *)p1, (int)jid,
+                    (int)SDL_GameControllerGetAxis(p1, SDL_CONTROLLER_AXIS_TRIGGERLEFT),
+                    (int)SDL_GameControllerGetAxis(p1, SDL_CONTROLLER_AXIS_TRIGGERRIGHT),
+                    SDL_GameControllerGetButton(p1, SDL_CONTROLLER_BUTTON_LEFTSHOULDER) ? 1 : 0,
+                    SDL_GameControllerGetButton(p1, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER) ? 1 : 0,
+                    SDL_GameControllerGetButton(p1, SDL_CONTROLLER_BUTTON_DPAD_DOWN) ? 1 : 0);
+            } else {
+                fprintf(stderr, "[wcw][poll] detected=%zu p1=(none)\n", detected);
+            }
+        }
     }
 }
 

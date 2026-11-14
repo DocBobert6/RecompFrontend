@@ -253,6 +253,8 @@ namespace recompui {
         }
     }
 
+#endif
+
     bool file::show_diagnostics_activity() {
 #ifdef __ANDROID__
         // [wcw diag] Test-only: asks the activity to open the Diagnostics
@@ -263,7 +265,6 @@ namespace recompui {
         return false;
 #endif
     }
-#endif
 
     void file::open_file_dialog(std::function<void(bool success, const std::filesystem::path& path)> callback) {
 #ifdef __APPLE__

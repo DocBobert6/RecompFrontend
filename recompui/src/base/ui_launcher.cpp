@@ -477,16 +477,18 @@ namespace recompui {
     }
 
     GameOption *GameOptionsMenu::add_rom_status_option() {
-        // [wcw diag] Initial state from the stored copy (a previous
-        // session's import survives restart); the select_rom callback
-        // rewrites this text after every import attempt in this session.
-        std::string initial = this->rom_valid
-            ? recomp::stored_rom_status(this->game_id)
-            : std::string{};
+        // [wcw alpha.3] Initial state from the stored copy on disk, NOT
+        // gated on this->rom_valid: rom_valid reads the startup-time set
+        // that check_all_stored_roms() populates once inside recomp::start,
+        // so it agrees with disk on a fresh boot — but the row should read
+        // the same on-disk source the Start guard re-validates
+        // (is_stored_rom_valid / stored_rom_status), whatever the
+        // construction order. stored_rom_status does the fresh on-disk
+        // check itself (and removes a bad copy), so an empty result means
+        // "no valid stored ROM", full stop.
+        std::string initial = recomp::stored_rom_status(this->game_id);
         if (initial.empty()) {
-            initial = this->rom_valid
-                ? "ROM: imported (validated at startup)"
-                : "ROM: none imported yet — pick your WWF No Mercy (USA, Rev 1) ROM";
+            initial = "ROM: none imported yet — pick your WWF No Mercy (USA, Rev 1) ROM";
         } else {
             initial = "ROM: " + initial;
         }
@@ -501,7 +503,29 @@ namespace recompui {
 
     void GameOptionsMenu::update_rom_status(const std::string& status) {
         if (rom_status_option != nullptr) {
+            // [wcw alpha.3] set_title -> Label::set_text ->
+            // get_current_context() FATALS ("no UI context open",
+            // ui_context.cpp) with no UI context open on this thread — that
+            // was the alpha.2 crash on Robert's phone: the SAF dialog result
+            // is drained by android_drain_pending_dialog_results() at the top
+            // of draw_hook, BEFORE any UI context is opened (RmlUi event
+            // callbacks get their owning context opened for them by
+            // Element::ProcessEvent, but the drain runs outside any event
+            // dispatch, so this is the one context-less path that touches
+            // the UI). Open the launcher context — the context these
+            // elements belong to — around the write when it isn't already
+            // open. open_if_not_already() is a no-op when the launcher
+            // context is already open, which is the case for the Start-guard
+            // call below (option callbacks run inside ProcessEvent's open),
+            // and open() would fatal OpenWithoutClose if a DIFFERENT context
+            // were open — no caller runs under another context, so this is
+            // safe for every call site.
+            recompui::ContextId ui_context = recompui::get_launcher_context_id();
+            bool opened = ui_context.open_if_not_already();
             rom_status_option->set_title(status);
+            if (opened) {
+                ui_context.close();
+            }
         }
     }
 
